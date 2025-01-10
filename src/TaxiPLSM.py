@@ -126,6 +126,7 @@ def main():
         exit(1)
 
     plsm = models[args.model](args.label,args.cte,args.he)
+    print(f"writing to {plsm.filename}")
     plsm.save_to_file()
 
 if __name__=="__main__":
