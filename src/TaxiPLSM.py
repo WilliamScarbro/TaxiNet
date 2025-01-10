@@ -1,4 +1,5 @@
 import PrismAST as PAST
+import LoopingStateMachine as PLSM
 import BayesianModel as BM
 import ConfMatModel as CMM
 import CorrErrModel as CEM
@@ -21,14 +22,15 @@ def control_func(args):
     return [(f"(a'={a})",1)]
 
 def control(state_est,*_):
-    return lambda pc : PAST.define_component_by_enumeration(state_est,control_func,pc)
+    return lambda pc : PLSM.define_component_by_enumeration(state_est,control_func,pc)
 
 
 ## Dynamics
 
-def dynamics(*_):
+def dynamics(_,__,fail_states):
     def dynamic_func(pc):
-        return [PAST.PrismTrans(f"cte>=-2 & cte<=2 & he>=-1 & he<=1 & pc={pc}",[(f"(he'=he+a) & (cte'=cte+he+a) & (pc'={pc+1})",1)])]
+        return [PAST.PrismTrans(f"cte>=-2 & cte<=2 & he>=-1 & he<=1 & pc={pc}",[(f"(he'=he+a) & (cte'=cte+he+a) & (pc'={pc+1})",1)]),
+                PAST.PrismTrans(f"(cte< -2 | cte>2 | he< -1 | he>1) & pc={pc}",[(f"(pc'={fail_states[0]})",1)])]
     return dynamic_func
 
 
@@ -37,7 +39,8 @@ def dynamics(*_):
 def aborter(state,_,fail_states):
     # should use enum_low and enum_high rather than hardcoding  
     return lambda pc : [
-        PAST.PrismTrans(f"(cte< -2 | cte>2 | he< -1 | he>1) & pc={pc}",[(f"(pc'={fail_states[0]})",1)]),
+        PAST.PrismTrans(f"(cte< -2 | cte>2) & pc={pc}",[(f"(pc'={fail_states[0]})",1)]),
+        PAST.PrismTrans(f"(he< -1 | he>1) & pc={pc}",[(f"(pc'={fail_states[1]})",1)]),
         PAST.PrismTrans(f"cte>=-2 & cte<=2 & he>=-1 & he<=1 & pc={pc}",[(f"(pc'={pc+1})",1)])
     ]
 
@@ -56,17 +59,17 @@ def create_TaxiPLSM_CM(label,cte_sample_file,he_sample_file):
     state=["cte","he"]
     state_est=["cte_est","he_est"]
     action=["a"]
-    fail_states=["cte_fail","he_fail"]
+    fail_states=["cte_fail","he_fail","dyn_fail"]
     
-    taxiP_cte = PAST.PrismComponent("Perceiver (CTE)",["cte"],["cte_est"],[],cte_model.perceiver_from_est_model())
-    taxiP_he = PAST.PrismComponent("Perceiver (HE)",["he"],["he_est"],[],he_model.perceiver_from_est_model())
-    taxiC = PAST.PrismComponent("Controller",state_est,action,[],control)
-    taxiD = PAST.PrismComponent("Dynamics",state+action,state,[],dynamics)
-    taxiA = PAST.PrismComponent("Aborter",state,[],fail_states,aborter)
+    taxiP_cte = PLSM.PrismComponent("Perceiver (CTE)",["cte"],["cte_est"],[],cte_model.perceiver_from_est_model())
+    taxiP_he = PLSM.PrismComponent("Perceiver (HE)",["he"],["he_est"],[],he_model.perceiver_from_est_model())
+    taxiC = PLSM.PrismComponent("Controller",state_est,action,[],control)
+    taxiD = PLSM.PrismComponent("Dynamics",state+action,state,["dyn_fail"],dynamics)
+    taxiA = PLSM.PrismComponent("Aborter",state,[],fail_states[:2],aborter)
     components=[taxiP_cte,taxiP_he,taxiC,taxiD,taxiA]
     
 
-    return PAST.PrismLoopingStateMachine("TaxiConfMat",label,components,variables,fail_states)
+    return PLSM.PrismLoopingStateMachine("TaxiConfMat",label,components,variables,fail_states)
 
 
 def create_TaxiPLSM_CE(label,cte_sample_file,he_sample_file):
@@ -80,26 +83,26 @@ def create_TaxiPLSM_CE(label,cte_sample_file,he_sample_file):
     variables=[cte,he,cte_pe,he_pe,cte_est,he_est,a]
     
     cte_model = CEM.CorrErrModel(cte_sample_file)
-    print(f"cte error correlation: {cte_model.error_corr()}")
+    # print(f"cte error correlation: {cte_model.error_corr()}")
     # print(cte_model.model.get_cpds('obs'))
     he_model = CEM.CorrErrModel(he_sample_file)
-    print(f"he error correlation: {he_model.error_corr()}")
+    # print(f"he error correlation: {he_model.error_corr()}")
     
     state=["cte","he"]
     p_error=["cte_pe","he_pe"]
     state_est=["cte_est","he_est"]
     action=["a"]
-    fail_states=["cte_fail","he_fail"]
+    fail_states=["cte_fail","he_fail","dyn_fail"]
     
-    taxiP_cte = PAST.PrismComponent("Perceiver (CTE)",["cte","cte_pe"],["cte_est"],[],cte_model.perceiver_from_est_model())
-    taxiP_he = PAST.PrismComponent("Perceiver (HE)",["he","he_pe"],["he_est"],[],he_model.perceiver_from_est_model())
-    taxiC = PAST.PrismComponent("Controller",state_est,action,[],control)
-    taxiD = PAST.PrismComponent("Dynamics",state+action,state,[],dynamics)
-    taxiA = PAST.PrismComponent("Aborter",state,[],fail_states,aborter)
+    taxiP_cte = PLSM.PrismComponent("Perceiver (CTE)",["cte","cte_pe"],["cte_est"],[],cte_model.perceiver_from_est_model())
+    taxiP_he = PLSM.PrismComponent("Perceiver (HE)",["he","he_pe"],["he_est"],[],he_model.perceiver_from_est_model())
+    taxiC = PLSM.PrismComponent("Controller",state_est,action,[],control)
+    taxiD = PLSM.PrismComponent("Dynamics",state+action,state,["dyn_fail"],dynamics)
+    taxiA = PLSM.PrismComponent("Aborter",state,[],fail_states[:2],aborter)
     components=[taxiP_cte,taxiP_he,taxiC,taxiD,taxiA]
     
 
-    return PAST.PrismLoopingStateMachine("TaxiCorrErr",label,components,variables,fail_states)
+    return PLSM.PrismLoopingStateMachine("TaxiCorrErr",label,components,variables,fail_states)
 
 
 import argparse

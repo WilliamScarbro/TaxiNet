@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 
 import DataLoader as DL
 import PrismAST as PAST
+import LoopingStateMachine as PLSM
 
 class BayesianNetworkWrapper:
     def __init__(self,nodes,edges):
@@ -39,7 +40,7 @@ class BayesianNetworkWrapper:
     
             def perceiver_pc(pc):
     
-                return PAST.define_component_by_enumeration(
+                return PLSM.define_component_by_enumeration(
                     state,
                     self.perceive_func_from_read_func(state_est),
                     pc)
